@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contrôle CNC GRBL (WiFi)</title>
+<style>
+:root{--bg:#fff;--rb:#f3f3f3;--ln:#d6d6d6;--tx:#222;--mu:#777;--bt:#fafafa;--gr:#5ba10c;--X:#d62a1c;--Y:#5aa300;--Z:#17a6ee;--cv:#fff;--gl:#dcdcdc}
+body.dk{--bg:#1c1f23;--rb:#262a2f;--ln:#3b4148;--tx:#e8e8e8;--mu:#99a;--bt:#2d3238;--cv:#14171a;--gl:#2e353c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.3 "Segoe UI",system-ui,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--bt);border:1px solid var(--ln);border-radius:3px;cursor:pointer;padding:5px 9px}
+button:hover:not(:disabled){border-color:var(--gr)}button:disabled{opacity:.4;cursor:not-allowed}
+input,select,textarea{background:var(--bg);border:1px solid var(--ln);border-radius:3px;padding:5px 7px}
+:focus-visible{outline:2px solid var(--Z);outline-offset:1px}
+#rib{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--rb);border-bottom:1px solid var(--ln);padding:8px 12px}
+.go{background:var(--gr);color:#fff;border-color:var(--gr);font-weight:600}
+.dg{background:var(--X);color:#fff;border-color:var(--X)}
+#state{margin-left:auto;padding:4px 12px;font-weight:700;color:var(--mu)}
+#state.Idle,#state.Run,#state.Jog{color:var(--gr)}#state.Alarm,#state.Hold,#state.Door{color:var(--X)}
+#ctl{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--ln)}
+#ctl>div{padding:12px 14px;border-right:1px solid var(--ln)}
+.dro{display:grid;grid-template-columns:auto 230px auto;gap:6px 6px;align-items:center}
+.val small{font-size:15px;font-weight:400;color:var(--mu);margin-left:8px;border-left:1px solid var(--ln);padding-left:8px}
+.val i{white-space:nowrap}
+.sz{font-weight:700;height:46px;line-height:1.1}
+.val{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--ln);border-radius:3px;padding:0 10px;font-size:26px;font-weight:700;height:46px;font-variant-numeric:tabular-nums}
+.val i{font-style:normal;font-size:11px;color:var(--mu);font-weight:400}
+.sv{font-size:11px;color:var(--mu);grid-column:2/7;margin:-4px 0 4px}
+.dro button.s{height:46px;padding:0 8px}
+.pad{display:grid;grid-template-columns:repeat(3,76px) 12px 76px;grid-auto-rows:64px;gap:6px}
+.pad button{font-weight:700;font-size:15px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.steps{display:flex;gap:6px;margin-top:8px}.steps button{flex:1}.steps button.on{border:2px solid #333;font-weight:700}
+.tabs{display:flex;border-bottom:1px solid var(--ln)}
+.tabs button{border:1px solid transparent;border-bottom:0;border-radius:4px 4px 0 0;background:none;padding:8px 16px;margin-bottom:-1px}
+.tabs button.on{border-color:var(--ln);border-bottom:1px solid var(--bg);background:var(--bg);font-weight:600}
+#panes{height:calc(100vh - 430px);min-height:300px;position:relative}
+.pane{display:none;height:100%;padding:8px}.pane.on{display:block}
+.pane>.box{height:calc(100% - 42px);overflow:auto;border:1px solid var(--ln);padding:6px;font:12.5px/1.4 Consolas,ui-monospace,monospace;white-space:pre-wrap;background:var(--cv);width:100%}
+textarea.box{resize:none}
+#log .tx{color:var(--Z)}#log .er{color:var(--X)}#log .in{color:var(--mu)}
+.bar{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bar input[type=text],.bar input:not([type]){flex:1}
+canvas{width:100%;height:100%;background:var(--cv);border:1px solid var(--ln);cursor:grab}
+#flist div{display:flex;justify-content:space-between;padding:4px 6px;cursor:pointer;font-family:inherit;border-bottom:1px solid var(--ln)}
+#flist div:hover{background:var(--rb)}
+#prog{position:absolute;left:0;top:0;width:100%;height:3px;appearance:none;border:0;background:none}
+#prog::-webkit-progress-value{background:var(--gr)}#prog::-webkit-progress-bar{background:none}
+.sl{display:flex;flex-direction:column;align-items:center;gap:6px;width:120px}
+.sl input{writing-mode:vertical-lr;direction:rtl;height:170px;accent-color:#111;padding:0;border:0}
+.sl output{background:#111;color:#fff;border-radius:4px;padding:2px 8px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="rib">
+ <input id="host" placeholder="IP de l’ESP3D (ex. 192.168.1.50)" size="26" aria-label="Adresse IP">
+ <button id="bConn" class="go">Connecter</button>
+ <details><summary style="cursor:pointer;color:var(--mu)">Avancé</summary>
+  <div class="row"><label>WebSocket <input id="port" value="81" size="4"><input id="path" value="/" size="4"></label>
+   <label>HTTP <input id="hport" value="80" size="4"></label><label><input type="checkbox" id="arduino" checked> arduino</label></div></details>
+ <label class="row" style="margin:0"><button tabindex="-1" onclick="this.nextElementSibling.click()">Ouvrir G-code</button><input type="file" id="file" accept=".gcode,.nc,.ngc,.txt,.tap,.gc" hidden></label>
+ <button id="bRun" class="go" disabled>▶ Lancer</button><button id="bPause" disabled>⏸ Pause</button><button id="bStop" disabled>■ Stop</button>
+ <button id="bUnlock">Débloquer ($X)</button><button id="bReset" class="dg">Reset</button>
+ <button id="bTheme">Thème</button><span id="state">Déconnecté</span>
+</div>
+
+<div id="ctl">
+ <div>
+  <div class="dro" id="dro"></div>
+  <div class="row"><button id="bHomeAll">Homing XYZ ($H)</button><button id="bG28" title="Aller à la position prédéfinie 1 (G28) : Z d’abord, puis X et Y">G28</button><button id="bG30" title="Aller à la position prédéfinie 2 (G30) : Z d’abord, puis X et Y">G30</button><label title="Hauteur de dégagement en coordonnées machine, utilisée avant les déplacements G28 / G30 (nécessite un homing)">Z haut (machine) <input id="zh" type="number" value="-5" step="1" style="width:64px"> mm</label><button id="bRecall">Rappeler tous les zéros</button>
+   <select id="wcs" aria-label="Système de coordonnées"><option>G54</option><option>G55</option><option>G56</option><option>G57</option><option>G58</option><option>G59</option></select></div>
+  <div class="row"><label><input type="checkbox" id="auto"> Rappeler les zéros après homing</label></div>
+  <div class="row" style="color:var(--mu);font-size:12px" id="fs">Avance 0 · Broche 0</div>
+ </div>
+ <div>
+  <div class="pad">
+   <span></span><button data-j="Y+" style="color:var(--Y)">Y+ ↑</button><span></span><span></span><button data-j="Z+" style="color:var(--Z)">Z+ ↑</button>
+   <button data-j="X-" style="color:var(--X)">← X-</button><button data-j="Y-" style="color:var(--Y)">Y- ↓</button><button data-j="X+" style="color:var(--X)">X+ →</button><span></span><button data-j="Z-" style="color:var(--Z)">Z- ↓</button>
+  </div>
+  <div class="row"><label><input type="checkbox" id="cont"> Continu</label>
+   Vitesse <input id="jf" type="number" value="1500" min="10" step="100" style="width:80px"> mm/min</div>
+  <div class="steps" id="steps"><button>0.1</button><button>1</button><button class="on">10</button><button>100</button></div>
+ </div>
+ <div style="display:flex;gap:6px">
+  <div class="sl"><button data-r="f">reset</button><input type="range" id="sf" min="10" max="200" value="100" aria-label="Surcharge d’avance"><span id="lf">Feed: 100%</span><output id="fo">0mm/min</output></div>
+ </div>
+</div>
+
+<div class="tabs" id="ptabs">
+ <button class="on" data-p="pl">Console</button><button data-p="pf">Fichiers SD / mémoire</button><button data-p="pe">Éditeur G-code</button><button data-p="p3">Vue 3D</button><button data-p="pm">Macros</button>
+</div>
+<div id="panes">
+ <progress id="prog" value="0" max="1"></progress>
+ <div class="pane on" id="pl"><div class="box" id="log"></div>
+  <div class="bar"><input id="cmd" placeholder="Commande (↑ ↓ pour l’historique), puis Entrée" autocomplete="off"><button id="bSend">Envoyer</button>
+   <button data-c="$$">$$</button><button data-c="$#">$#</button><button data-c="$G">$G</button><button data-c="$I">$I</button><button id="bClr">Effacer</button></div></div>
+ <div class="pane" id="pf">
+  <div class="bar" style="margin:0 0 6px"><select id="src"><option value="flash">Mémoire de l’ESP</option><option value="sd">Carte SD</option></select>
+   <button id="fUp">↑ Dossier parent</button><button id="fRef">Actualiser</button><span id="fpath" style="align-self:center;color:var(--mu)">/</span></div>
+  <div class="box" id="flist" style="height:calc(100% - 78px);white-space:normal">Clique sur Actualiser pour lister les fichiers.</div>
+  <div class="bar"><span style="color:var(--mu)">Clique sur un fichier pour le charger dans l’éditeur. Les commandes $F / $SD/List de la console listent la SD côté contrôleur.</span></div></div>
+ <div class="pane" id="pe"><textarea class="box" id="ed" spellcheck="false" placeholder="Ouvre un fichier ou écris ton G-code ici."></textarea>
+  <div class="bar"><button id="bApply">Appliquer les modifications</button><span id="pinfo" style="align-self:center;color:var(--mu)">0 / 0 lignes</span></div></div>
+ <div class="pane" id="p3"><canvas id="cv"></canvas></div>
+ <div class="pane" id="pm"><div id="macros"></div>
+  <div class="bar"><input id="mn" placeholder="Nom" style="flex:0 0 140px"><input id="mc" placeholder="Commandes séparées par ;"><button id="mAdd">Ajouter</button></div></div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id),Q=s=>document.querySelectorAll(s),AX=["X","Y","Z"],COL=["--X","--Y","--Z"];
+let ws=null,poll=null,wco=[0,0,0],pos={m:[0,0,0],w:[0,0,0]},state="Déconnecté",ovCur=[100],buf="",hist=[],hi=0;
+let queue=[],sent=[],work=[],total=0,acked=0,running=false,paused=false,path=[],step=10,fdir="/",zeros={},wasHome=false,yaw=-.6,pit=.9;
+const dec=new TextDecoder();
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function log(t,c){const l=$("log"),d=document.createElement("div");d.className=c||"in";d.textContent=t;l.appendChild(d);while(l.childNodes.length>500)l.removeChild(l.firstChild);l.scrollTop=l.scrollHeight}
+function setState(s){state=s;$("state").textContent=s;$("state").className=s.split(":")[0]}
+function raw(s){if(ws&&ws.readyState===1)ws.send(s);else log("Pas de connexion.","er")}
+const rt=c=>raw(String.fromCharCode(c));
+function cmd(s){log("> "+s,"tx");raw(s+"\n")}
+const P=()=>$("wcs").selectedIndex+1;
+
+/* Thème, onglets */
+if(store("dk")==="1")document.body.classList.add("dk");
+$("bTheme").onclick=()=>{document.body.classList.toggle("dk");store("dk",document.body.classList.contains("dk")?"1":"0");draw()};
+Q("#ptabs button").forEach(b=>b.onclick=()=>{Q("#ptabs button").forEach(x=>x.classList.toggle("on",x===b));Q(".pane").forEach(p=>p.classList.toggle("on",p.id===b.dataset.p));draw()});
+
+/* Connexion */
+$("host").value=store("host")||"";$("port").value=store("port")||"81";$("path").value=store("path")||"/";$("hport").value=store("hport")||"80";
+function loadZeros(){try{zeros=JSON.parse(store("zeros_"+$("host").value.trim())||"{}")}catch(e){zeros={}}showDro()}
+$("host").onchange=loadZeros;
+$("bConn").onclick=()=>{
+ if(ws){ws.close();return}
+ const h=$("host").value.trim();if(!h){log("Indique l’adresse IP de l’ESP3D.","er");return}
+ ["host","port","path","hport"].forEach(k=>store(k,$(k).value));loadZeros();
+ const url="ws://"+h+":"+$("port").value+$("path").value;log("Connexion à "+url+" …");
+ try{ws=$("arduino").checked?new WebSocket(url,["arduino"]):new WebSocket(url)}catch(e){log("Adresse invalide : "+e.message,"er");ws=null;return}
+ ws.binaryType="arraybuffer";
+ ws.onopen=()=>{$("bConn").textContent="Déconnecter";setState("Connecté");log("Connecté.");buf="";poll=setInterval(()=>{if(ws&&ws.readyState===1)ws.send("?")},250)};
+ ws.onclose=()=>{clearInterval(poll);ws=null;$("bConn").textContent="Connecter";setState("Déconnecté");if(running)endRun("Connexion perdue : programme interrompu.");log("Déconnecté.","er")};
+ ws.onerror=()=>log("Erreur WebSocket. Vérifie l’IP, le port, le chemin, et que la page n’est pas en https.","er");
+ ws.onmessage=ev=>rx(typeof ev.data==="string"?ev.data:dec.decode(ev.data));
+};
+function rx(t){buf+=t.replace(/\r\n?/g,"\n");let i;while((i=buf.indexOf("\n"))>=0){const l=buf.slice(0,i).trim();buf=buf.slice(i+1);if(l)line(l)}}
+function line(l){
+ if(l[0]==="<"){status(l);return}
+ if(l==="ok"){log(l);ack();return}
+ if(l.startsWith("error")){log(l,"er");ack(l);return}
+ if(l.startsWith("ALARM")){log(l,"er");setState(l);return}
+ log(l);
+}
+function status(l){
+ const p=l.replace(/[<>]/g,"").split("|"),s=p[0].split(":")[0];let mp=null,wp=null;
+ for(const f of p.slice(1)){const i=f.indexOf(":");if(i<0)continue;const k=f.slice(0,i),n=f.slice(i+1).split(",").map(Number);
+  if(k==="MPos")mp=n;else if(k==="WPos")wp=n;else if(k==="WCO")wco=n;
+  else if(k==="FS"){$("fs").textContent="Avance "+n[0]+" · Broche "+n[1];$("fo").textContent=Math.round(n[0])+"mm/min"}
+  else if(k==="Ov")ovCur=n}
+ if(s==="Home")wasHome=true;
+ else if(wasHome&&s==="Idle"){wasHome=false;if($("auto").checked)recall(true)}
+ setState(s);
+ if(mp)wp=mp.map((v,i)=>v-wco[i]);else if(wp)mp=wp.map((v,i)=>v+wco[i]);
+ if(mp){pos={m:mp,w:wp};AX.forEach((a,i)=>{$("w"+a).textContent=wp[i].toFixed(2);$("m"+a).textContent=mp[i].toFixed(2)});draw()}
+}
+
+/* DRO : zéro, homing par axe, zéros enregistrés */
+function showDro(){
+ const z=zeros[P()]||{};
+ AX.forEach((a,i)=>{const e=$("sv"+a);if(e)e.textContent=z[a]===undefined?"Aucun zéro enregistré":"Zéro enregistré : "+z[a].toFixed(3)+" (machine)"});
+}
+(()=>{const d=$("dro");
+ AX.forEach((a,i)=>{
+  d.insertAdjacentHTML("beforeend",
+   `<button class="sz" data-z="${a}" title="Fixe le zéro pièce ici et l’enregistre" style="color:var(${COL[i]})">setzero<br>⊕ ${a}</button>
+    <div class="val" title="Position pièce (grand) et machine (petit)"><i>PIÈCE</i><span id="w${a}" style="color:var(${COL[i]})">0.00</span><small id="m${a}" title="Position machine">0.00</small></div>
+    <button class="s" data-h="${a}" title="Homing de l’axe ${a} ($H${a})">⌂ ${a}</button>
+    <div class="sv" id="sv${a}"></div>`)});
+ d.querySelectorAll("[data-z]").forEach(b=>b.onclick=()=>{const a=b.dataset.z,i=AX.indexOf(a);
+  cmd("G10 L20 P"+P()+" "+a+"0");(zeros[P()]=zeros[P()]||{})[a]=pos.m[i];saveZeros();log("Zéro "+a+" fixé et enregistré : "+pos.m[i].toFixed(3));showDro()});
+ d.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{const a=b.dataset.h;if(confirm("Homing de l’axe "+a+" ? Il va bouger jusqu’à sa fin de course."))cmd("$H"+a)});
+})();
+function saveZeros(){store("zeros_"+$("host").value.trim(),JSON.stringify(zeros))}
+function recall(quiet,only){
+ const z=zeros[P()]||{};let n=0;
+ AX.forEach(a=>{if(only&&a!==only)return;if(z[a]!==undefined){cmd("G10 L2 P"+P()+" "+a+z[a].toFixed(3));n++}});
+ if(!n&&!quiet)log("Aucun zéro enregistré à rappeler.","er")}
+$("bRecall").onclick=()=>recall(false);$("wcs").onchange=()=>{cmd($("wcs").value);showDro()};
+$("bHomeAll").onclick=()=>{if(confirm("Lancer le homing de tous les axes ?"))cmd("$H")};
+$("bUnlock").onclick=()=>cmd("$X");
+function pre(g,n){
+ const z=parseFloat($("zh").value);if(isNaN(z)){log("Indique le Z haut (machine).","er");return}
+ if(!confirm("Monter Z à "+z+" mm (machine), puis aller à la position prédéfinie "+n+" ("+g+") en X et Y ? Le homing doit avoir été fait."))return;
+ store("zh",$("zh").value);cmd("G90");cmd("G53 G0 Z"+z);cmd("G91 "+g+" X0 Y0");cmd("G90")}
+$("bG28").onclick=()=>pre("G28",1);$("bG30").onclick=()=>pre("G30",2);
+$("bReset").onclick=()=>{rt(24);if(running)endRun("Reset : programme interrompu.")};
+
+/* Console */
+$("bSend").onclick=send;
+$("cmd").onkeydown=e=>{
+ if(e.key==="Enter")send();
+ else if(e.key==="ArrowUp"&&hist.length){hi=Math.max(0,hi-1);$("cmd").value=hist[hi];e.preventDefault()}
+ else if(e.key==="ArrowDown"){hi=Math.min(hist.length,hi+1);$("cmd").value=hist[hi]||"";e.preventDefault()}};
+function send(){const v=$("cmd").value.trim();if(v){cmd(v);hist.push(v);hi=hist.length;$("cmd").value=""}}
+Q("[data-c]").forEach(b=>b.onclick=()=>cmd(b.dataset.c));$("bClr").onclick=()=>$("log").textContent="";
+
+/* Jog et avance */
+Q("#steps button").forEach(b=>b.onclick=()=>{Q("#steps button").forEach(x=>x.classList.toggle("on",x===b));step=parseFloat(b.textContent)});
+const jf=()=>Math.max(10,+$("jf").value||1500);
+function jog(k){cmd("$J=G91 G21 "+k[0]+(k[1]==="-"?-1:1)*($("cont").checked?10000:step)+" F"+jf())}
+Q("[data-j]").forEach(b=>{b.onpointerdown=e=>{e.preventDefault();jog(b.dataset.j)};
+ const up=()=>{if($("cont").checked)rt(0x85)};b.onpointerup=up;b.onpointerleave=up;b.onpointercancel=up});
+document.addEventListener("keydown",e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||e.repeat)return;
+ const m={ArrowLeft:"X-",ArrowRight:"X+",ArrowUp:"Y+",ArrowDown:"Y-",PageUp:"Z+",PageDown:"Z-"}[e.key];if(m){e.preventDefault();jog(m)}});
+document.addEventListener("keyup",e=>{if($("cont").checked&&/^(Arrow|Page)/.test(e.key))rt(0x85)});
+$("sf").oninput=()=>$("lf").textContent="Feed: "+$("sf").value+"%";
+$("sf").onchange=()=>{const t=+$("sf").value;let d=t-(ovCur[0]||100);if(t===100){rt(0x90);return}
+ while(d>=10){rt(0x91);d-=10}while(d<=-10){rt(0x92);d+=10}while(d>0){rt(0x93);d--}while(d<0){rt(0x94);d++}};
+Q("[data-r]").forEach(b=>b.onclick=()=>{$("sf").value=100;$("sf").oninput();rt(0x90)});
+
+/* Fichiers : mémoire ESP / carte SD via HTTP ESP3D */
+const base=()=>"http://"+$("host").value.trim()+($("hport").value&&$("hport").value!=="80"?":"+$("hport").value:"");
+function isDir(f){return f.size==="-1"||f.size===-1||f.type==="dir"||f.type==="directory"||f.isdir===true}
+async function lst(){
+ if(!$("host").value.trim()){log("Indique l’IP de l’ESP3D.","er");return}
+ const sd=$("src").value==="sd",u=base()+(sd?"/sdfiles":"/files")+"?action=list&path="+encodeURIComponent(fdir),box=$("flist");
+ box.textContent="Chargement…";$("fpath").textContent=fdir;
+ try{
+  const r=await fetch(u);if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();
+  const fs=(j.files||j.entries||[]).slice().sort((a,b)=>isDir(b)-isDir(a)||String(a.name).localeCompare(b.name));
+  box.textContent="";if(!fs.length)box.textContent="Dossier vide.";
+  for(const f of fs){const d=document.createElement("div"),dir=isDir(f);
+   d.innerHTML="<span></span><span style='color:var(--mu)'></span>";d.firstChild.textContent=(dir?"📁 ":"")+f.name;d.lastChild.textContent=dir?"":f.size;
+   d.onclick=()=>{if(dir){fdir=(fdir==="/"?"":fdir)+"/"+f.name;lst()}else open_(f.name)};box.appendChild(d)}
+ }catch(e){box.textContent="Impossible de lister : "+e.message+"\nURL essayée : "+u+"\nVérifie l’IP, le port HTTP et que l’ESP3D autorise l’accès depuis cette page (CORS).";log("Liste des fichiers : "+e.message+" ("+u+")","er")}}
+async function open_(n){
+ const sd=$("src").value==="sd",p=(fdir==="/"?"":fdir)+"/"+n,c=sd?[base()+"/sd"+p,base()+"/sdfiles"+p]:[base()+p,base()+"/files"+p];let err="";
+ for(const u of c){try{const r=await fetch(u);if(!r.ok){err="HTTP "+r.status;continue}
+  $("ed").value=await r.text();load();log("Fichier chargé : "+p);Q("#ptabs button")[2].click();return}catch(e){err=e.message}}
+ log("Lecture impossible de "+p+" : "+err,"er")}
+$("fRef").onclick=lst;$("src").onchange=()=>{fdir="/";lst()};
+$("fUp").onclick=()=>{fdir=fdir.replace(/\/[^/]+$/,"")||"/";lst()};
+
+/* G-code : charger, envoyer */
+$("file").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$("ed").value=r.result;load()};r.readAsText(f)};
+$("bApply").onclick=load;
+function load(){
+ queue=$("ed").value.split(/\r?\n/).map(l=>l.replace(/\(.*?\)/g,"").replace(/;.*$/,"").trim()).filter(Boolean);
+ total=queue.length;acked=0;$("pinfo").textContent="0 / "+total+" lignes";$("prog").value=0;$("prog").max=Math.max(1,total);
+ $("bRun").disabled=!total;buildPath();draw();log("Programme chargé : "+total+" lignes.")}
+$("bRun").onclick=()=>{
+ if(!ws||ws.readyState!==1){log("Connecte-toi d’abord.","er");return}
+ if(state!=="Idle"){log("La machine doit être au repos (Idle) pour lancer un programme.","er");return}
+ if(!confirm("Lancer le programme ? Vérifie le zéro pièce, la broche et la fraise."))return;
+ running=true;paused=false;acked=0;sent=[];work=queue.slice();$("bRun").disabled=true;$("bPause").disabled=false;$("bStop").disabled=false;pump()};
+function pump(){while(running&&!paused&&work.length){const n=work[0].length+1;if(sent.reduce((a,b)=>a+b,0)+n>100)break;sent.push(n);raw(work.shift()+"\n")}}
+function ack(e){
+ if(!sent.length)return;sent.shift();acked++;$("prog").value=acked;$("pinfo").textContent=acked+" / "+total+" lignes";
+ if(e&&running){endRun("Erreur GRBL : programme arrêté à la ligne "+acked+".");rt(0x85);return}
+ if(running&&acked>=total&&!work.length){endRun("Programme terminé.");return}pump()}
+function endRun(m){running=false;paused=false;work=[];sent=[];$("bRun").disabled=!total;$("bPause").disabled=true;$("bStop").disabled=true;$("bPause").textContent="⏸ Pause";log(m,"er")}
+$("bPause").onclick=()=>{paused=!paused;$("bPause").textContent=paused?"▶ Reprendre":"⏸ Pause";if(paused)rt(33);else{rt(126);pump()}};
+$("bStop").onclick=()=>{rt(24);endRun("Programme arrêté.")};
+
+/* Vue 3D */
+function buildPath(){
+ path=[];let x=0,y=0,z=0,abs=true,g=0;
+ for(const l of queue){const u=l.toUpperCase();
+  if(/G91(?!\.)/.test(u))abs=false;if(/G90(?!\.)/.test(u))abs=true;
+  const mg=u.match(/G0?([0123])(?!\d)/);if(mg)g=+mg[1];
+  const m=a=>{const r=u.match(new RegExp(a+"(-?[\\d.]+)"));return r?+r[1]:null},mx=m("X"),my=m("Y"),mz=m("Z");
+  if(mx===null&&my===null&&mz===null)continue;
+  const n=[mx===null?x:abs?mx:x+mx,my===null?y:abs?my:y+my,mz===null?z:abs?mz:z+mz];
+  path.push([x,y,z,n[0],n[1],n[2],g===0]);[x,y,z]=n}}
+function draw(){
+ const c=$("cv");if(!c.offsetWidth)return;const W=c.width=c.offsetWidth,H=c.height=c.offsetHeight,k=c.getContext("2d"),css=n=>getComputedStyle(document.body).getPropertyValue(n);
+ let mx=100,my=100;path.forEach(s=>{mx=Math.max(mx,s[0],s[3]);my=Math.max(my,s[1],s[4])});mx=Math.max(mx,pos.w[0]);my=Math.max(my,pos.w[1]);
+ const gs=mx>400||my>400?100:50,gx=Math.ceil(mx/gs)*gs,gy=Math.ceil(my/gs)*gs,cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
+ const T=(x,y,z)=>{const a=x*cy-y*sy,b=x*sy+y*cy;return[a,-(b*sp+z*cp)]},q=[T(0,0,0),T(gx,0,0),T(0,gy,0),T(gx,gy,0)],xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);
+ const x0=Math.min(...xs),y0=Math.min(...ys),sc=Math.min((W-60)/(Math.max(...xs)-x0||1),(H-60)/(Math.max(...ys)-y0||1)),ox=(W-(Math.max(...xs)-x0)*sc)/2-x0*sc,oy=(H-(Math.max(...ys)-y0)*sc)/2-y0*sc;
+ const S=(x,y,z)=>{const p=T(x,y,z);return[ox+p[0]*sc,oy+p[1]*sc]},L=(a,b,col,w,dash)=>{k.strokeStyle=css(col);k.lineWidth=w;k.setLineDash(dash||[]);k.beginPath();k.moveTo(...a);k.lineTo(...b);k.stroke()};
+ k.clearRect(0,0,W,H);for(let i=0;i<=gx;i+=gs/5)L(S(i,0,0),S(i,gy,0),"--gl",1);for(let j=0;j<=gy;j+=gs/5)L(S(0,j,0),S(gx,j,0),"--gl",1);
+ L(S(0,0,0),S(gx,0,0),"--X",2);L(S(0,0,0),S(0,gy,0),"--Y",2);L(S(0,0,0),S(0,0,gs),"--Z",2);
+ for(const s of path)L(S(s[0],s[1],s[2]),S(s[3],s[4],s[5]),s[6]?"--mu":"--gr",1,s[6]?[3,3]:[]);
+ k.setLineDash([]);k.fillStyle="#4a5cff";k.beginPath();k.arc(...S(pos.w[0],pos.w[1],pos.w[2]),7,0,7);k.fill()}
+(()=>{const c=$("cv");let dr=null;c.onpointerdown=e=>{dr=[e.clientX,e.clientY];c.setPointerCapture(e.pointerId)};
+ c.onpointermove=e=>{if(!dr)return;yaw+=(e.clientX-dr[0])*.008;pit=Math.min(1.5,Math.max(0,pit+(e.clientY-dr[1])*.008));dr=[e.clientX,e.clientY];draw()};c.onpointerup=()=>dr=null})();
+addEventListener("resize",draw);
+
+/* Macros */
+let macros=[];try{macros=JSON.parse(store("macros")||"[]")}catch(e){}
+function showMacros(){const d=$("macros");d.textContent="";if(!macros.length){d.textContent="Aucune macro. Ajoute-en une ci-dessous.";return}
+ macros.forEach((m,i)=>{const r=document.createElement("div");r.className="bar";const b=document.createElement("button");b.textContent=m.n;b.title=m.c;b.onclick=()=>m.c.split(";").map(s=>s.trim()).filter(Boolean).forEach(cmd);
+  const x=document.createElement("button");x.textContent="Supprimer";x.onclick=()=>{macros.splice(i,1);store("macros",JSON.stringify(macros));showMacros()};r.append(b,x);d.appendChild(r)})}
+$("mAdd").onclick=()=>{const n=$("mn").value.trim(),c=$("mc").value.trim();if(!n||!c)return;macros.push({n,c});store("macros",JSON.stringify(macros));$("mn").value=$("mc").value="";showMacros()};
+$("zh").value=store("zh")||"-5";loadZeros();showMacros();draw();
+</script>
+</body>
+</html>
