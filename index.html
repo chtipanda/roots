@@ -54,9 +54,9 @@ canvas{width:100%;height:100%;background:var(--cv);border:1px solid var(--ln);cu
 </head>
 <body>
 <div id="rib">
- <input id="host" placeholder="IP de l’ESP3D (ex. 192.168.1.50)" size="26" aria-label="Adresse IP">
+ <select id="link" aria-label="Type de connexion"><option value="wifi">WiFi (ESP3D)</option><option value="usb">USB</option></select><span id="wifiBox"><input id="host" placeholder="IP de l’ESP3D (ex. 192.168.1.50)" size="26" aria-label="Adresse IP"></span><span id="usbBox" hidden>Vitesse <select id="baud" aria-label="Vitesse série"><option>9600</option><option>57600</option><option selected>115200</option><option>230400</option><option>250000</option></select></span>
  <button id="bConn" class="go">Connecter</button>
- <details><summary style="cursor:pointer;color:var(--mu)">Avancé</summary>
+ <details id="adv"><summary style="cursor:pointer;color:var(--mu)">Avancé</summary>
   <div class="row"><label>WebSocket <input id="port" value="81" size="4"><input id="path" value="/" size="4"></label>
    <label>HTTP <input id="hport" value="80" size="4"></label><label><input type="checkbox" id="arduino" checked> arduino</label></div></details>
  <label class="row" style="margin:0"><button tabindex="-1" onclick="this.nextElementSibling.click()">Ouvrir G-code</button><input type="file" id="file" accept=".gcode,.nc,.ngc,.txt,.tap,.gc" hidden></label>
@@ -117,8 +117,9 @@ function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localSto
 function log(t,c){const l=$("log"),d=document.createElement("div");d.className=c||"in";d.textContent=t;l.appendChild(d);while(l.childNodes.length>500)l.removeChild(l.firstChild);l.scrollTop=l.scrollHeight}
 function setState(s){state=s;$("state").textContent=s;$("state").className=s.split(":")[0]}
 function raw(s){if(ws&&ws.readyState===1)ws.send(s);else log("Pas de connexion.","er")}
-const rt=c=>raw(String.fromCharCode(c));
+const rt=c=>{if(!ws||ws.readyState!==1){log("Pas de connexion.","er");return}ws.send(c<128?String.fromCharCode(c):new Uint8Array([c]))};
 function cmd(s){log("> "+s,"tx");raw(s+"\n")}
+const zk=()=>$("link").value==="usb"?"usb":$("host").value.trim();
 const P=()=>$("wcs").selectedIndex+1;
 
 /* Thème, onglets */
@@ -128,17 +129,29 @@ Q("#ptabs button").forEach(b=>b.onclick=()=>{Q("#ptabs button").forEach(x=>x.cla
 
 /* Connexion */
 $("host").value=store("host")||"";$("port").value=store("port")||"81";$("path").value=store("path")||"/";$("hport").value=store("hport")||"80";
-function loadZeros(){try{zeros=JSON.parse(store("zeros_"+$("host").value.trim())||"{}")}catch(e){zeros={}}showDro()}
+function loadZeros(){try{zeros=JSON.parse(store("zeros_"+zk())||"{}")}catch(e){zeros={}}showDro()}
 $("host").onchange=loadZeros;
+function onOpen(){$("bConn").textContent="Déconnecter";setState("Connecté");log("Connecté.");buf="";poll=setInterval(()=>{if(ws&&ws.readyState===1)ws.send("?")},250)}
+function onClose(){clearInterval(poll);ws=null;$("bConn").textContent="Connecter";setState("Déconnecté");if(running)endRun("Connexion perdue : programme interrompu.");log("Déconnecté.","er")}
+$("link").onchange=()=>{const u=$("link").value==="usb";$("wifiBox").hidden=u;$("usbBox").hidden=!u;$("adv").hidden=u;store("link",$("link").value);loadZeros()};
+async function connUSB(){
+ if(!("serial" in navigator)){log("USB indisponible : utilise Chrome ou Edge (ordinateur).","er");return}
+ try{
+  const port=await navigator.serial.requestPort();await port.open({baudRate:+$("baud").value||115200});store("baud",$("baud").value);
+  const writer=port.writable.getWriter(),reader=port.readable.getReader(),enc=new TextEncoder();
+  ws={readyState:1,send(d){writer.write(typeof d==="string"?enc.encode(d):d).catch(()=>{})},close(){reader.cancel().catch(()=>{})}};
+  onOpen();log("USB ouvert à "+$("baud").value+" bauds. Les cartes Arduino redémarrent à la connexion : attends la bannière Grbl.");
+  (async()=>{try{for(;;){const r=await reader.read();if(r.done)break;rx(dec.decode(r.value,{stream:true}))}}catch(e){}
+   try{reader.releaseLock()}catch(e){}try{writer.releaseLock()}catch(e){}try{await port.close()}catch(e){}onClose()})();
+ }catch(e){log("USB : "+e.message,"er")}}
 $("bConn").onclick=()=>{
  if(ws){ws.close();return}
+ if($("link").value==="usb"){connUSB();return}
  const h=$("host").value.trim();if(!h){log("Indique l’adresse IP de l’ESP3D.","er");return}
  ["host","port","path","hport"].forEach(k=>store(k,$(k).value));loadZeros();
  const url="ws://"+h+":"+$("port").value+$("path").value;log("Connexion à "+url+" …");
  try{ws=$("arduino").checked?new WebSocket(url,["arduino"]):new WebSocket(url)}catch(e){log("Adresse invalide : "+e.message,"er");ws=null;return}
- ws.binaryType="arraybuffer";
- ws.onopen=()=>{$("bConn").textContent="Déconnecter";setState("Connecté");log("Connecté.");buf="";poll=setInterval(()=>{if(ws&&ws.readyState===1)ws.send("?")},250)};
- ws.onclose=()=>{clearInterval(poll);ws=null;$("bConn").textContent="Connecter";setState("Déconnecté");if(running)endRun("Connexion perdue : programme interrompu.");log("Déconnecté.","er")};
+ ws.binaryType="arraybuffer";ws.onopen=onOpen;ws.onclose=onClose;
  ws.onerror=()=>log("Erreur WebSocket. Vérifie l’IP, le port, le chemin, et que la page n’est pas en https.","er");
  ws.onmessage=ev=>rx(typeof ev.data==="string"?ev.data:dec.decode(ev.data));
 };
@@ -179,7 +192,7 @@ function showDro(){
   cmd("G10 L20 P"+P()+" "+a+"0");(zeros[P()]=zeros[P()]||{})[a]=pos.m[i];saveZeros();log("Zéro "+a+" fixé et enregistré : "+pos.m[i].toFixed(3));showDro()});
  d.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{const a=b.dataset.h;if(confirm("Homing de l’axe "+a+" ? Il va bouger jusqu’à sa fin de course."))cmd("$H"+a)});
 })();
-function saveZeros(){store("zeros_"+$("host").value.trim(),JSON.stringify(zeros))}
+function saveZeros(){store("zeros_"+zk(),JSON.stringify(zeros))}
 function recall(quiet,only){
  const z=zeros[P()]||{};let n=0;
  AX.forEach(a=>{if(only&&a!==only)return;if(z[a]!==undefined){cmd("G10 L2 P"+P()+" "+a+z[a].toFixed(3));n++}});
@@ -292,7 +305,7 @@ function showMacros(){const d=$("macros");d.textContent="";if(!macros.length){d.
  macros.forEach((m,i)=>{const r=document.createElement("div");r.className="bar";const b=document.createElement("button");b.textContent=m.n;b.title=m.c;b.onclick=()=>m.c.split(";").map(s=>s.trim()).filter(Boolean).forEach(cmd);
   const x=document.createElement("button");x.textContent="Supprimer";x.onclick=()=>{macros.splice(i,1);store("macros",JSON.stringify(macros));showMacros()};r.append(b,x);d.appendChild(r)})}
 $("mAdd").onclick=()=>{const n=$("mn").value.trim(),c=$("mc").value.trim();if(!n||!c)return;macros.push({n,c});store("macros",JSON.stringify(macros));$("mn").value=$("mc").value="";showMacros()};
-$("zh").value=store("zh")||"-5";loadZeros();showMacros();draw();
+$("baud").value=store("baud")||"115200";$("link").value=store("link")||"wifi";$("link").onchange();$("zh").value=store("zh")||"-5";showMacros();draw();
 </script>
 </body>
 </html>
